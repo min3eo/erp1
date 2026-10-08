@@ -306,7 +306,7 @@ export default function HomePage() {
           {todo.length > 7 && <p className="px-4 pt-1 pb-3 text-caption text-subtle">외 {todo.length - 7}건 · 결재함과 각 화면에서 확인하세요</p>}
         </section>
 
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-4 lg:[&>section:last-child]:flex-1">
           <section className="rounded-2xl border border-line bg-surface p-5 shadow-[0_1px_2px_rgb(0_0_0/0.03),0_8px_24px_-12px_rgb(0_0_0/0.08)]">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-[17px] font-semibold tracking-tight">세무 일정</h2>
