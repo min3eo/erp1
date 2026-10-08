@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 import { unit } from '@/lib/flow-core';
 import { money } from '@/lib/format';
 import { masterVendors, masterWarehouses } from '@/lib/masters';
-import { people } from '@/lib/seed';
+import { EmployeeCard } from './employee-card';
 import { useErp } from './erp-provider';
 import { Avatar, DataTable, DetailField, DetailGrid, Hint, Pill, SettingRow, Subtitle } from './ui';
 
@@ -98,41 +98,6 @@ function WarehouseDetail({ code }: { code: string }) {
   );
 }
 
-function EmployeeDetail({ index }: { index: number }) {
-  const p = people[index];
-  if (!p) return null;
-  return (
-    <>
-      <div className="mb-6.25 flex items-center gap-3.5">
-        <Avatar name={p[0]} className="size-13 text-[18px]" />
-        <div>
-          <h2 className="text-title font-semibold">{p[0]}</h2>
-          <p className="my-1 text-xs text-muted">{p[1]} · {p[2]}</p>
-        </div>
-        <Pill className="ml-auto">재직 중</Pill>
-      </div>
-      <H3>기본 정보</H3>
-      <DetailGrid>
-        <DetailField label="부서" value={p[1]} />
-        <DetailField label="직책" value={p[2]} />
-        <DetailField label="입사일" value="2025.03.01" />
-        <DetailField label="고용 형태" value="정규직" />
-        <DetailField label="사업장" value="본사" />
-        <DetailField label="승인자" value="소속 팀장" />
-      </DetailGrid>
-      <H3>근무 · 휴가</H3>
-      <DetailGrid>
-        <DetailField label="기본 근무" value="09:00 – 18:00" />
-        <DetailField label="근무 유형" value="고정 근무" />
-        <DetailField label="휴가 부여" value="15일 · 샘플 기준" />
-        <DetailField label="오늘 상태" value={p[3]} />
-      </DetailGrid>
-      <H3>접근 권한</H3>
-      <div className="mt-3"><Pill>{p[1] + ' 역할'}</Pill></div>
-      <Subtitle>개인 정보와 근무 정책은 화면 예시입니다.</Subtitle>
-    </>
-  );
-}
 
 function CorrectionDetail() {
   return (
@@ -244,9 +209,12 @@ export function useOpenDetail() {
         if (w) openDrawer(w.name, <WarehouseDetail code={String(key)} />);
         return;
       }
-      case 'employee':
-        if (people[index]) openDrawer(people[index][0], <EmployeeDetail index={index} />);
+      case 'employee': {
+        // Key is the employee name (older callers passed an index into the active staff list).
+        const name = typeof key === 'number' ? state.employees.filter(e => !e.left)[key]?.name : key;
+        if (name && state.employees.some(e => e.name === name)) openDrawer(name, <EmployeeCard name={name} />);
         return;
+      }
       case 'correction': return openDrawer('근태 정정 요청', <CorrectionDetail />);
       case 'transfer': return openDrawer('창고 이동 상세', <TransferDetail index={index} />);
       case 'production': return openDrawer('생산 지시 상세', <ProductionDetail index={index} />);

@@ -67,7 +67,11 @@ test('회계: 모든 전표 차대 일치, 시산표 합계 일치, 채권·채�
   assert.equal(bal('외상매출금'), M.receivables(s).reduce((t, b) => t + b.balance, 0));
   assert.equal(bal('외상매입금'), M.payables(s).reduce((t, b) => t + b.balance, 0));
   const pl = A.incomeSummary(tb);
-  assert.equal(pl.revenue, 640000 + 260000, '출고된 공급가 합계');
+  const exports = s.books.fxDeals.filter(d => d.kind === '수출').reduce((t, d) => t + Math.round(d.amount * d.rate), 0);
+  const trades = s.books.trades.filter(t => t.kind === '매출' && t.account === '매출').reduce((t, x) => t + x.supply, 0);
+  const shipped = s.sales.reduce((t, x) => t + x.shipped * x.price, 0);
+  assert.equal(shipped, 640000 + 260000 + 1_600_000, '샘플 출고: 8월 20개 · 10월 10개 · 10월 50개');
+  assert.equal(pl.revenue, shipped + exports + trades, '출고된 공급가 합계 + 수출 + 매출매입 매출');
   assert.equal(pl.gross, pl.revenue - pl.cogs);
   assert.ok(bal('급여') > 0, '확정된 9월 급여 반영');
 });

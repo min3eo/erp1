@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { canOpen, currentUser, switchUser } from '@/lib/admin';
 import { groupTabLabel, href, navGroups, navSections, pageFromPath, pageNames } from '@/lib/nav';
 import { companies, type CompanyId } from '@/lib/seed';
 import { CommandPalette, OPEN_SEARCH_EVENT } from './command-palette';
@@ -14,10 +15,13 @@ import { useModalDialog } from './use-modal-dialog';
 import { Avatar, cx, Icon } from './ui';
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const { company, state, companyInfo, switchCompany, pending, toast } = useErp();
+  const { company, state, companyInfo, switchCompany, pending, toast, mutate } = useErp();
   const router = useRouter();
   const page = pageFromPath(usePathname());
-  const groups = navGroups(state.modules).filter(([, ids]) => ids.length);
+  const groups = navGroups(state.modules).filter(([g, ids]) => ids.length && canOpen(state, g));
+  const pageGroup = navGroups(state.modules).find(([, ids]) => ids.includes(page))?.[0];
+  const denied = !!pageGroup && !canOpen(state, pageGroup);
+  const me = currentUser(state);
   const group = groups.find(([, ids]) => ids.includes(page))?.[0] ?? groups[0][0];
   const sections = navSections(group);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -25,6 +29,33 @@ export function AppShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [page]);
+
+  // Pages start at the reading width; one whose table would scroll sideways gets the wide layout.
+  // The check runs before the browser paints (layout effect), so the narrow, scrolling version is never seen,
+  // and pages already found wide are remembered so they open wide straight away.
+  const mainRef = useRef<HTMLElement>(null);
+  const [widePages, setWidePages] = useState<Set<string>>(() => new Set());
+  const wide = widePages.has(page);
+  useLayoutEffect(() => {
+    const main = mainRef.current;
+    if (!main || widePages.has(page)) return;
+    const widen = () => {
+      const scrolls = [...main.querySelectorAll<HTMLElement>('.overflow-auto, .overflow-x-auto')].some(el => el.scrollWidth - el.clientWidth > 1);
+      if (!scrolls) return false;
+      // Swap the class right away (before paint), then record it in state.
+      main.classList.replace('max-w-295', 'max-w-380');
+      setWidePages(prev => new Set(prev).add(page));
+      return true;
+    };
+    if (widen()) return;
+    // Later changes (a tab switch, a resize) can still make a table overflow.
+    const resize = new ResizeObserver(() => { if (widen()) stop(); });
+    const mutation = new MutationObserver(() => { if (widen()) stop(); });
+    const stop = () => { resize.disconnect(); mutation.disconnect(); };
+    resize.observe(main);
+    mutation.observe(main, { childList: true, subtree: true });
+    return stop;
+  }, [page, company, widePages]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -83,7 +114,22 @@ export function AppShell({ children }: { children: ReactNode }) {
             </Link>
             <Link href={href('reports')} className="hidden h-8 items-center rounded-md px-2 hover:bg-surface-2 lg:flex">리포트</Link>
             <Link href={href('settings')} className="hidden h-8 items-center rounded-md px-2 hover:bg-surface-2 lg:flex">설정</Link>
-            <Avatar name="민" className="ml-1 size-7" />
+            <label className="ml-1 flex h-8 items-center gap-1.5 rounded-md pl-0.5 hover:bg-surface-2" title="사용자 전환 (시안의 로그인 대신)">
+              <Avatar name={me?.name ?? '?'} className="size-7" />
+              <select
+                value={me?.id}
+                onChange={e => {
+                  const id = e.target.value;
+                  mutate(d => switchUser(d, id), '사용자 전환');
+                  const u = state.admin.users.find(x => x.id === id);
+                  toast(`${u?.name} (${u?.role})으로 전환했어요.`, 'info');
+                }}
+                aria-label="사용자 전환"
+                className="hidden max-w-28 appearance-none bg-transparent pr-1 text-caption text-ink-2 outline-none lg:block"
+              >
+                {state.admin.users.map(u => <option key={u.id} value={u.id}>{u.name} · {u.role}</option>)}
+              </select>
+            </label>
           </nav>
         </div>
 
@@ -151,10 +197,18 @@ export function AppShell({ children }: { children: ReactNode }) {
             ))}
           </nav>
           {/* Keyed by company so list filters and tabs reset when the workspace changes. */}
-          <main key={company} className="mx-auto max-w-[1180px] px-4 py-8 sm:px-8 lg:px-12 lg:py-12 print:max-w-none print:p-0">
-            <div key={page} className="animate-page">{children}</div>
+          <main ref={mainRef} key={company} className={cx('mx-auto px-4 py-8 sm:px-8 lg:px-12 lg:py-12 print:max-w-none print:p-0', wide ? 'max-w-380' : 'max-w-295')}>
+            <div key={page} className="animate-page">
+              {denied ? (
+                <div className="py-20 text-center">
+                  <p className="text-title font-medium">이 화면을 열 권한이 없어요</p>
+                  <p className="mt-2 text-body text-muted">{me?.name} ({me?.role}) 역할에는 ‘{groupTabLabel[pageGroup!] ?? pageGroup}’ 메뉴가 허용되지 않았어요. 관리자에게 권한 설정을 요청하세요.</p>
+                  <Link href="/" className="mt-4 inline-block text-body text-accent hover:underline">홈으로</Link>
+                </div>
+              ) : children}
+            </div>
           </main>
-          <footer className="mx-auto flex max-w-[1180px] print:hidden flex-wrap items-center justify-between gap-3 px-4 pb-10 text-tiny text-subtle sm:px-8 lg:px-12">
+          <footer className={cx('mx-auto flex flex-wrap items-center justify-between gap-3 px-4 pb-10 text-tiny text-subtle sm:px-8 lg:px-12 print:hidden', wide ? 'max-w-380' : 'max-w-295')}>
             <span>tessel · 프론트 시안 · 표시된 정보는 샘플 데이터입니다.</span>
             <span className="md:hidden"><ThemeSwitch /></span>
           </footer>

@@ -6,11 +6,13 @@ import { useOpenForm } from '@/components/forms';
 import { Button, Card, CardHead, DataTable, NameCell, PageHead, Pill, Stat, Stats, Tabs, Toolbar } from '@/components/ui';
 import * as F from '@/lib/flow-core';
 import { money } from '@/lib/format';
-import { unitMaterialCost } from '@/lib/production';
+import { setConversion, unitMaterialCost } from '@/lib/production';
+import { Field, ModalForm } from '@/components/form-kit';
 
 export default function BomPage() {
   const { state } = useErp();
   const openForm = useOpenForm();
+  const [convOpen, setConvOpen] = useState(false);
   const products = state.boms.map(b => b.productCode);
   const [code, setCode] = useState(products[0] ?? '');
   const bom = state.boms.find(b => b.productCode === code);
@@ -39,12 +41,12 @@ export default function BomPage() {
         <Stat label="등록 BOM" value={state.boms.length} unit="개" foot="완제품 · 반제품" />
         <Stat label="구성 자재" value={bom.lines.length} unit="개" foot={`${item[1]} 기준`} />
         <Stat label="단위 재료비" value={money(Math.round(cost))} unit="" foot={`1 ${F.unit(item)} · 자재 기준 단가`} tone="info" />
-        <Stat label="기준 단가 대비" value={item[6] ? Math.round((cost / item[6]) * 100) : 0} unit="%" foot={`기준 단가 ${money(item[6])}`} />
+        <Stat label="단위 제조원가" value={money(Math.round(cost + (bom.conversion ?? 0)))} unit="" foot={`재료비 + 가공비 ${money(bom.conversion ?? 0)}`} />
       </Stats>
       <Card>
         <Toolbar>
           <Tabs options={products} value={code} onChange={setCode} />
-          <span className="flex items-center gap-2 text-caption text-muted"><Pill tone="accent">{bom.version}</Pill>적용 {bom.updated}</span>
+          <span className="flex items-center gap-2 text-caption text-muted"><Pill tone="accent">{bom.version}</Pill>적용 {bom.updated}<Button onClick={() => setConvOpen(true)}>가공비 {money(bom.conversion ?? 0)}</Button></span>
         </Toolbar>
         <CardHead title={item[1]} sub={`${code} · ${item[2]} · 1 ${F.unit(item)} 생산 기준${bom.note ? ` · ${bom.note}` : ''}`} />
         <DataTable
@@ -63,6 +65,10 @@ export default function BomPage() {
           })}
         />
       </Card>
+      <ModalForm open={convOpen} onClose={() => setConvOpen(false)} title={`${item[1]} 단위당 가공비`} submitLabel="저장" done="가공비를 바꿨어요. 이후 생산 지시부터 적용돼요." run={(d, f) => setConversion(d, code, f.conversion)}>
+        <p className="text-body text-muted">제품 1{F.unit(item)}을 만드는 데 드는 노무비 · 제조경비(전기 · 감가상각 · 소모품 등) 배부액이에요. 생산 실적이 들어오면 재료비와 함께 제품 원가가 되고, 같은 금액이 비용에서 빠져요.</p>
+        <Field name="conversion" label={`가공비 (원 / ${F.unit(item)})`} type="number" min={0} defaultValue={bom.conversion ?? 0} />
+      </ModalForm>
       {usedIn.length > 0 && (
         <Card className="mt-4">
           <CardHead title="이 품목을 쓰는 BOM" sub="반제품은 다른 제품의 자재로 들어가요." />

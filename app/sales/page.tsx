@@ -16,12 +16,15 @@ export default function SalesPage() {
     .filter(s => (list.filter === '전체' || s.status === list.filter) && list.matches(s.id, s.name, s.customer))
     .map(s => {
       const item = state.items.find(i => i[0] === s.itemCode);
+      const ship = state.movements.find(m => m.ref === s.id && m.type === '판매 출고' && !m.cancelled);
+      const late = s.due && s.status !== '출고 완료' && s.due < F.date();
       return [
         <span key="id" className="font-mono text-caption">{s.id}{s.quoteId && <CellSub>견적 {s.quoteId}</CellSub>}</span>,
         <NameCell key="n" name={s.name} sub={money(s.qty * s.price)} />,
         s.customer,
         `${s.qty} / ${s.shipped} ${item ? F.unit(item) : ''}`,
         item?.[4] ?? '—',
+        <span key="d" className="text-caption">{s.due ? <span className={late ? 'text-danger' : ''}>납기 {s.due}{late ? ' · 지연' : ''}</span> : <span className="text-subtle">납기 없음</span>}{ship?.tracking && <CellSub>{ship.carrier} {ship.tracking}</CellSub>}</span>,
         <Pill key="s">{s.status}</Pill>,
         <span key="a" className="flex items-center gap-1.5">
           {s.status !== '출고 완료' && <Button variant="primary" onClick={() => openForm('ship', s.id)}>출고 처리</Button>}
@@ -46,7 +49,7 @@ export default function SalesPage() {
       </Stats>
       <Card>
         <FilterToolbar tabs={['전체', '출고 대기', '부분 출고', '출고 완료']} list={list} />
-        <DataTable headers={['주문 번호', '품목', '고객사', '주문 / 출고', '현재 재고', '상태', '처리']} rows={rows} />
+        <DataTable headers={['주문 번호', '품목', '고객사', '주문 / 출고', '현재 재고', '납기 · 배송', '상태', '처리']} rows={rows} />
       </Card>
       <Subtitle>주문 등록 시 재고는 변하지 않습니다. 출고를 확정할 때 차감됩니다.</Subtitle>
     </>
