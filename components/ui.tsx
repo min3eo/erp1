@@ -57,6 +57,11 @@ const statusTone: Record<string, BaseTone> = {
   '계획': 'accent', '확정': 'ok', '미확정': 'warn',
   '작성': 'info', '주문 전환': 'ok', '거절': 'neutral', '기한 내': 'ok', '1~30일': 'warn', '31~60일': 'danger', '61일 이상': 'danger', '정산 완료': 'ok',
   '요청': 'accent', '진행': 'info', '피드백': 'warn', '보류': 'neutral', '긴급': 'danger', '높음': 'warn', '보통': 'neutral', '낮음': 'neutral',
+  // 회계 · 자금 · 세무.
+  '발행 대기': 'warn', '발행 완료': 'info', '전송 완료': 'ok', '수취 완료': 'ok', '미처리': 'warn', '처리 완료': 'ok',
+  '보관': 'info', '미결제': 'warn', '결제 완료': 'ok', '부도': 'danger', '지급 완료': 'ok', '지급 대기': 'warn',
+  '서명 요청': 'warn', '서명 완료': 'ok', '진행 중': 'ok', '만료 예정': 'warn', '만료': 'neutral', '시작 전': 'neutral',
+  '신고 완료': 'ok', '미신고': 'warn', '보유': 'ok', '처분': 'neutral', '상각 완료': 'neutral', '미작성': 'warn', '미등록': 'warn',
 };
 
 export function toneFor(text: string): BaseTone | undefined {

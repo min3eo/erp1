@@ -3,19 +3,22 @@ import { checkQuantity, date, id, recordStockChange, round, unit, type ErpState 
 
 export interface BomLine { code: string; qty: number }
 /** Materials needed to make one unit (EA or kg) of the product. */
-export interface Bom { productCode: string; version: string; updated: string; lines: BomLine[]; note?: string }
+/** conversion: 가공비 (노무비 · 제조경비) applied per unit made, on top of the materials. */
+export interface Bom { productCode: string; version: string; updated: string; lines: BomLine[]; note?: string; conversion?: number }
 
 export type WorkOrderStatus = '계획' | '생산 중' | '완료' | '취소';
 export interface WorkOrder {
   id: string; productCode: string; name: string; qty: number; produced: number; status: WorkOrderStatus;
   date: string; due: string; lot: string; lines: BomLine[]; issued: boolean; note?: string;
+  /** 가공비 per unit, fixed from the BOM when the order was made. */
+  conversion?: number;
 }
 
 export function seedBoms(): Bom[] {
   return [
-    { productCode: 'FG-001', version: 'v1.1', updated: '2026-10-01', note: '보습 벌크 배합량 수정', lines: [{ code: 'SF-001', qty: 0.05 }, { code: 'PK-001', qty: 1 }] },
-    { productCode: 'FG-002', version: 'v1.0', updated: '2026-08-01', lines: [{ code: 'SF-001', qty: 0.05 }, { code: 'RM-002', qty: 0.002 }, { code: 'PK-001', qty: 1 }] },
-    { productCode: 'SF-001', version: 'v2.0', updated: '2026-09-15', note: '반제품: 1kg 기준', lines: [{ code: 'RM-001', qty: 0.8 }, { code: 'RM-002', qty: 0.02 }] },
+    { productCode: 'FG-001', version: 'v1.1', updated: '2026-10-01', note: '보습 벌크 배합량 수정', conversion: 1500, lines: [{ code: 'SF-001', qty: 0.05 }, { code: 'PK-001', qty: 1 }] },
+    { productCode: 'FG-002', version: 'v1.0', updated: '2026-08-01', conversion: 1800, lines: [{ code: 'SF-001', qty: 0.05 }, { code: 'RM-002', qty: 0.002 }, { code: 'PK-001', qty: 1 }] },
+    { productCode: 'SF-001', version: 'v2.0', updated: '2026-09-15', note: '반제품: 1kg 기준', conversion: 2000, lines: [{ code: 'RM-001', qty: 0.8 }, { code: 'RM-002', qty: 0.02 }] },
   ];
 }
 
@@ -51,6 +54,7 @@ export function createWorkOrder(state: ErpState, f: { productCode: string; qty: 
   const wo: WorkOrder = {
     id: id('MO'), productCode: item[0], name: item[1], qty, produced: 0, status: '계획', date: today, due,
     lot: `LOT-${today.replace(/-/g, '')}-${seq}`, lines: bom.lines.map(l => ({ ...l })), issued: false,
+    ...(bom.conversion && { conversion: bom.conversion }),
   };
   state.workOrders.unshift(wo);
   return wo;
@@ -80,7 +84,10 @@ export function reportOutput(state: ErpState, woId: string, qty: string | number
   const amount = checkQuantity(qty, wo.productCode, state);
   const left = round(wo.qty - wo.produced);
   if (amount > left) throw Error(`남은 생산 수량 ${left}을 넘을 수 없어요.`);
-  recordStockChange(state, wo.productCode, amount, '생산 입고', wo.id, `${wo.lot} 실적`, token);
+  const row = recordStockChange(state, wo.productCode, amount, '생산 입고', wo.id, `${wo.lot} 실적`, token);
+  row.lot = wo.lot;
+  const life = state.inv?.meta[wo.productCode]?.shelfLifeDays;
+  if (life) row.expiry = new Date(Date.parse(date()) + life * 86400000).toISOString().slice(0, 10);
   wo.produced = round(wo.produced + amount);
   if (wo.produced === wo.qty) wo.status = '완료';
   return wo;
@@ -92,4 +99,15 @@ export function cancelWorkOrder(state: ErpState, woId: string, note?: string) {
   wo.status = '취소';
   wo.note = note?.trim() || '계획 취소';
   return wo;
+}
+
+/** 단위당 가공비 for a BOM: used by work orders created from now on. */
+export function setConversion(state: ErpState, code: string, value: string | number) {
+  const bom = bomFor(state, code);
+  if (!bom) throw Error('BOM을 찾을 수 없어요.');
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 0) throw Error('가공비는 0 이상의 원 단위로 입력해 주세요.');
+  bom.conversion = n || undefined;
+  bom.updated = date();
+  return bom;
 }

@@ -1,4 +1,5 @@
 /* Quotes, receivables / payables and payments. Browser-only demo rules; amounts include 10% VAT. */
+import { assertOpen } from './admin';
 import { date, id, purchase, round, sale, unit, type ErpState, type Order, type Sale } from './flow-core';
 
 export type QuoteStatus = '작성' | '주문 전환' | '거절';
@@ -7,11 +8,14 @@ export interface Quote {
   date: string; validUntil: string; status: QuoteStatus; saleId?: string; reason?: string;
 }
 export type PaymentKind = '수금' | '지급';
-export interface Payment { id: string; kind: PaymentKind; partner: string; docId: string; amount: number; method: string; date: string; note: string }
+/** fund: the bank account the money moved through, when known (matched from 계좌/카드 내역). */
+export interface Payment { id: string; kind: PaymentKind; partner: string; docId: string; amount: number; method: string; date: string; note: string; fund?: string }
 
 export const VAT_RATE = 0.1;
 export const PAYMENT_TERMS_DAYS = 30;
-export const PAYMENT_METHODS = ['계좌이체', '카드', '현금', '어음'] as const;
+export const PAYMENT_METHODS = ['계좌이체', '카드', '현금'] as const;
+/** Settlements that are not money moving: discounts, write-offs and advances applied to an invoice. */
+export const SETTLE_METHODS = ['매출할인', '매입할인', '대손', '선수금 대체', '선급금 대체'] as const;
 
 /** Supply amount → { supply, vat, total } in whole won. */
 export function withVat(supply: number) {
@@ -33,11 +37,28 @@ const returnedQty = (state: ErpState, docId: string) => state.returns.filter(r =
 const settledFor = (state: ErpState, docId: string) => state.payments.filter(p => p.docId === docId).reduce((s, p) => s + p.amount, 0);
 
 /** Receivable: shipped minus returned, billed with VAT. Payable: received minus returned, billed with VAT. */
+/** Outstanding exposure to a customer: unpaid receivables plus unshipped orders, VAT included. */
+export function creditExposure(state: ErpState, customer: string) {
+  const open = receivables(state).filter(b => b.partner === customer).reduce((t, b) => t + b.balance, 0);
+  const unshipped = state.sales.filter(s => s.customer === customer && s.status !== '출고 완료').reduce((t, s) => t + withVat((s.qty - s.shipped) * s.price).total, 0);
+  return open + unshipped;
+}
+
+/** Refuses a new order that would push the customer past its 여신 한도. */
+export function checkCredit(state: ErpState, customer: string, amount: number) {
+  const limit = state.books?.partners.find(p => p.name === customer.trim())?.creditLimit;
+  if (!limit) return;
+  const after = creditExposure(state, customer.trim()) + withVat(amount).total;
+  if (after > limit) throw Error(`여신 한도 초과: ${customer} 한도 ${limit.toLocaleString()}원, 이 주문까지 ${after.toLocaleString()}원이에요. 수금 후 주문하거나 한도를 조정해 주세요.`);
+}
+
 export function balanceOf(state: ErpState, doc: Sale | Order, kind: PaymentKind, today = date()): Balance {
   const done = kind === '수금' ? (doc as Sale).shipped : (doc as Order).received;
   const billed = withVat(round(done - returnedQty(state, doc.id)) * doc.price).total;
   const settled = settledFor(state, doc.id);
-  const due = addDays(doc.date, PAYMENT_TERMS_DAYS);
+  const partnerName = kind === '수금' ? (doc as Sale).customer : (doc as Order).vendor;
+  const terms = state.books?.partners.find(p => p.name === partnerName)?.terms ?? PAYMENT_TERMS_DAYS;
+  const due = addDays(doc.date, terms);
   const balance = Math.max(0, billed - settled);
   return {
     kind, docId: doc.id, partner: kind === '수금' ? (doc as Sale).customer : (doc as Order).vendor, name: doc.name,
@@ -99,7 +120,8 @@ export function recordPayment(state: ErpState, f: { kind: PaymentKind; docId: st
   const amount = Number(f.amount);
   if (!Number.isInteger(amount) || amount <= 0) throw Error('금액은 1원 이상의 정수로 입력해 주세요.');
   if (amount > b.balance) throw Error(`남은 금액 ${b.balance.toLocaleString()}원을 넘을 수 없어요.`);
-  const method = (PAYMENT_METHODS as readonly string[]).includes(f.method ?? '') ? f.method! : '계좌이체';
+  assertOpen(state, f.date || date());
+  const method = ([...PAYMENT_METHODS, ...SETTLE_METHODS] as readonly string[]).includes(f.method ?? '') ? f.method! : '계좌이체';
   const p: Payment = { id: id(f.kind === '수금' ? 'RC' : 'PY'), kind: f.kind, partner: b.partner, docId: doc.id, amount, method, date: f.date || date(), note: f.note?.trim() || '' };
   state.payments.unshift(p);
   return p;
@@ -154,6 +176,9 @@ export function wonInKorean(n: number) {
 export function lastPrice(state: ErpState, side: 'sale' | 'purchase', partner: string, itemCode: string) {
   const name = partner.trim();
   if (!name) return null;
+  // A partner price list (단가표) wins over history.
+  const listed = state.books?.partners.find(p => p.name === name)?.prices?.[itemCode];
+  if (listed) return { price: listed, date: '', source: `${name} 단가표` };
   const iso2 = (d: string) => d.replace(/\./g, '-');
   const history =
     side === 'sale'

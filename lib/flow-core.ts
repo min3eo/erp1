@@ -1,4 +1,8 @@
 /* Browser-only demo transaction rules. No server or external service calls. */
+import { defaultAdmin, withDefaultRules, type Admin } from './admin';
+import { emptyBooks, type Books } from './books';
+import { emptyHr, seedEmployees, type Employee, type Hr } from './hr';
+import { emptyInv, type Inv } from './inventory';
 import type { Collab } from './collab';
 import type { Payment, Quote } from './finance';
 import type { PayrollRun, Salary } from './payroll';
@@ -18,11 +22,17 @@ export interface Order {
 export interface Sale {
   id: string; itemCode: string; name: string; customer: string; qty: number; price: number;
   shipped: number; status: SaleStatus; date: string; quoteId?: string;
+  /** 납기 (requested delivery date). */
+  due?: string;
 }
 export interface Movement {
   id: string; date: string; type: string; code: string; name: string; warehouse: string;
   qty: number; before: number; after: number; ref: string; note: string; unit: Unit;
   stockType?: '정상' | '불량'; cancelled?: boolean; cancelledBy?: string; originalId?: string;
+  /** 제조번호 · 유통기한 of stock coming in (receipts, production). */
+  lot?: string; expiry?: string;
+  /** 택배사 · 송장번호 on shipments. */
+  carrier?: string; tracking?: string;
 }
 export type ReturnKind = '판매 반품' | '구매 반품';
 export interface ReturnRecord {
@@ -48,6 +58,15 @@ export interface ErpState {
   workOrders: WorkOrder[];
   salaries: Salary[];
   payrolls: PayrollRun[];
+  /** 회계 · 자금 · 세무 records (lib/books.ts). */
+  books: Books;
+  /** Employee master and HR records (lib/hr.ts). */
+  employees: Employee[];
+  hr: Hr;
+  /** Users, permissions, approval rules, change history and the month-close lock (lib/admin.ts). */
+  admin: Admin;
+  /** Item extras, warehouses, transfers and inspections (lib/inventory.ts). */
+  inv: Inv;
 }
 
 /** Older saved data and seeds may lack the flow fields; normalize fills them in. */
@@ -89,6 +108,11 @@ export function normalize(input: ErpStateInput): ErpState {
   state.workOrders ||= [];
   state.salaries ||= [];
   state.payrolls ||= [];
+  state.books = { ...emptyBooks(), ...state.books };
+  state.employees ||= seedEmployees();
+  state.admin = withDefaultRules({ ...defaultAdmin(), ...state.admin });
+  state.inv = { ...emptyInv(), ...state.inv };
+  state.hr = { ...emptyHr(), ...state.hr, settings: { ...emptyHr().settings, ...state.hr?.settings } };
   state.quarantine ||= {};
   state.leaves ||= [];
   state.clock ??= null;
@@ -99,7 +123,8 @@ export function normalize(input: ErpStateInput): ErpState {
     if (o.received == null) o.received = o.status === '입고 완료' ? o.qty : 0;
   });
   if (!state.flowVersion) {
-    state.items.forEach(i => state.movements.push({ id: id('ST'), date: date(), type: '기초 재고', code: i[0], name: i[1], warehouse: i[3], qty: i[4], before: 0, after: i[4], ref: 'OPENING', note: '시안 시작 시 보유 수량', unit: unit(i) }));
+    // Opening stock is dated to the start of the year so every later move is valued after it.
+    state.items.forEach(i => state.movements.push({ id: id('ST'), date: date().slice(0, 4) + '-01-01', type: '기초 재고', code: i[0], name: i[1], warehouse: i[3], qty: i[4], before: 0, after: i[4], ref: 'OPENING', note: '시안 시작 시 보유 수량', unit: unit(i) }));
     state.flowVersion = 1;
   }
   return state;
@@ -157,12 +182,12 @@ export function receipt(state: ErpState, orderId: string, amount: FormValue, tok
   return row;
 }
 
-export function sale(state: ErpState, f: { itemCode: string; customer?: string; qty: FormValue; price: FormValue; quoteId?: string }) {
+export function sale(state: ErpState, f: { itemCode: string; customer?: string; qty: FormValue; price: FormValue; quoteId?: string; due?: string }) {
   const item = itemFor(state, f.itemCode), qty = quantity(f.qty, item), price = Number(f.price);
   if (!['완제품', '상품'].includes(item[2])) throw Error('판매 주문은 완제품 또는 상품으로 등록해 주세요.');
   if (!f.customer?.trim()) throw Error('고객사를 입력해 주세요.');
   if (!Number.isFinite(price) || price < 0) throw Error('판매 단가를 확인해 주세요.');
-  const s: Sale = { id: id('SO'), itemCode: item[0], name: item[1], customer: f.customer.trim(), qty, price, shipped: 0, status: '출고 대기', date: date(), ...(f.quoteId && { quoteId: f.quoteId }) };
+  const s: Sale = { id: id('SO'), itemCode: item[0], name: item[1], customer: f.customer.trim(), qty, price, shipped: 0, status: '출고 대기', date: date(), ...(f.quoteId && { quoteId: f.quoteId }), ...(f.due && { due: f.due }) };
   state.sales.unshift(s);
   return s;
 }

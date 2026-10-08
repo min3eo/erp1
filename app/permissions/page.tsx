@@ -1,62 +1,78 @@
 'use client';
 
 import { useState } from 'react';
-import { Card, CardHead, DataTable, PageHead, Pill, PreviewNotice, SectionTitle, Subtitle, Switch, cx } from '@/components/ui';
-
-const roles = ['관리자', '구매 담당자', '물류 담당자', '인사 담당자'] as const;
-type Role = (typeof roles)[number];
-const actions = ['조회', '등록', '수정', '승인', '내보내기'];
-/** [업무 영역, 담당 영역] — a role owns the rows whose area its name starts with. */
-const rules: [string, string][] = [
-  ['품목 · 거래처', '공통'], ['구매 · 발주', '구매'], ['입고 · 출고', '물류'], ['재고 조정', '물류'],
-  ['구성원 정보', '인사'], ['근태 · 휴가', '인사'], ['회사 · 권한 설정', '관리자'],
-];
+import { Options } from '@/components/books-ui';
+import { useErp } from '@/components/erp-provider';
+import { Field, ModalForm, Select, useAction } from '@/components/form-kit';
+import { Button, Card, CardHead, DataTable, Hint, PageHead, Pill, Switch, cx } from '@/components/ui';
+import { ALL_GROUPS, ROLES, addUser, currentUser, setUserRole, toggleAccess, type Role } from '@/lib/admin';
+import { groupTabLabel } from '@/lib/nav';
 
 export default function PermissionsPage() {
-  const [role, setRole] = useState<Role>('구매 담당자');
-  const admin = role === '관리자';
+  const { state } = useErp();
+  const act = useAction();
+  const [role, setRole] = useState<Role>('경리');
+  const [adding, setAdding] = useState(false);
+  const me = currentUser(state);
+  const isAdmin = me?.role === '관리자';
+  const allowed = role === '관리자' ? ALL_GROUPS : state.admin.access[role] ?? [];
 
   return (
     <>
-      <PageHead title="권한 설정" sub="직무별로 접근 범위와 처리 권한을 구분하세요." />
-      <PreviewNotice />
+      <PageHead
+        title="권한 설정"
+        sub="사용자마다 역할을 정하고, 역할마다 열 수 있는 메뉴를 정해요. 바꾸면 위쪽 메뉴와 화면 접근에 바로 반영돼요. 시안에서는 오른쪽 위 이름을 눌러 사용자를 바꿔 볼 수 있어요."
+        action={<Button variant="primary" disabled={!isAdmin} onClick={() => setAdding(true)}>사용자 추가</Button>}
+      />
+      {!isAdmin && <Hint>권한은 관리자만 바꿀 수 있어요. 지금은 {me?.name} ({me?.role})으로 보고 있어요.</Hint>}
       <div className="grid gap-5 md:grid-cols-[230px_minmax(0,1fr)]">
         <Card className="flex h-fit flex-wrap items-center gap-1.25 p-3 md:block md:p-5.5">
           <h2 className="mb-4.25 hidden text-title font-semibold md:block">역할</h2>
-          {roles.map(r => (
-            <button
-              key={r}
-              type="button"
-              onClick={() => setRole(r)}
-              className={cx('mb-1.5 block rounded-lg p-3.5 text-left md:w-full', role === r && 'bg-accent-soft text-accent')}
-            >
+          {ROLES.map(r => (
+            <button key={r} type="button" onClick={() => setRole(r)} className={cx('mb-1.5 block rounded-lg p-3.5 text-left md:w-full', role === r && 'bg-accent-soft text-accent')}>
               <span>{r}</span>
-              <small className="mt-0.75 block text-tiny text-muted">{r === '관리자' ? '전체 업무 관리' : r.replace(' 담당자', '') + ' 업무 중심'}</small>
+              <small className="mt-0.75 block text-tiny text-muted">{state.admin.users.filter(u => u.role === r).map(u => u.name).join(', ') || '사용자 없음'}</small>
             </button>
           ))}
         </Card>
-        <Card className="min-w-0">
-          <CardHead title={role}>
-            <Pill>역할 미리보기</Pill>
-          </CardHead>
-          <DataTable
-            headers={['업무 영역', ...actions]}
-            rows={rules.map(([title, area]) => {
-              const own = admin || role.startsWith(area);
-              return [title, ...[own || area === '공통', own, own, admin, own].map((v, n) => <Switch key={n} checked={v} disabled readOnly aria-label={`${title} ${actions[n]}`} />)];
-            })}
-          />
-          <div className="p-4 sm:p-6">
-            <SectionTitle>데이터 접근 범위</SectionTitle>
-            <div className="flex flex-wrap gap-2.25">
-              {['회사 전체', '소속 부서', '본인 담당 건'].map(s => (
-                <span key={s} className={cx('rounded-md border px-3.75 py-1.75 text-caption', s === '소속 부서' ? 'border-accent-line bg-accent-soft text-accent' : 'border-accent-line text-muted')}>{s}</span>
-              ))}
-            </div>
-            <Subtitle>민감한 직원 정보와 원가 정보는 별도 권한으로 분리하는 예시입니다.</Subtitle>
-          </div>
-        </Card>
+        <div className="flex min-w-0 flex-col gap-4">
+          <Card>
+            <CardHead title={`${role} · 메뉴 권한`} sub={role === '관리자' ? '관리자는 모든 메뉴를 열고 권한 · 마감을 바꿀 수 있어요.' : '켜진 메뉴만 위쪽 탭에 보이고 열 수 있어요.'} />
+            <DataTable
+              foot={false}
+              headers={['메뉴', '접근']}
+              rows={ALL_GROUPS.map(g => [
+                groupTabLabel[g] ?? g,
+                <Switch
+                  key="s"
+                  checked={allowed.includes(g) || g === '워크스페이스'}
+                  disabled={!isAdmin || role === '관리자' || g === '워크스페이스'}
+                  onChange={() => act(d => toggleAccess(d, role, g), `${role} · ${groupTabLabel[g] ?? g} 권한을 바꿨어요.`)}
+                  aria-label={`${g} 접근`}
+                />,
+              ])}
+            />
+          </Card>
+          <Card>
+            <CardHead title="사용자" sub="각 사용자의 역할을 바꿀 수 있어요." />
+            <DataTable
+              foot={false}
+              headers={['이름', '역할', '상태']}
+              rows={state.admin.users.map(u => [
+                <strong key="n" className="font-medium text-ink">{u.name}</strong>,
+                <select key="r" value={u.role} disabled={!isAdmin} onChange={e => act(d => setUserRole(d, u.id, e.target.value as Role), `${u.name}님 역할을 ${e.target.value}(으)로 바꿨어요.`)} className="h-8 rounded-md border border-line bg-surface px-2 text-caption">
+                  {ROLES.map(r => <option key={r}>{r}</option>)}
+                </select>,
+                u.id === me?.id ? <Pill key="s" tone="accent">지금 로그인</Pill> : <Pill key="s" tone="neutral">사용 중</Pill>,
+              ])}
+            />
+          </Card>
+        </div>
       </div>
+      <ModalForm open={adding} onClose={() => setAdding(false)} title="사용자 추가" submitLabel="추가" done="사용자를 추가했어요." run={(d, f) => addUser(d, { name: f.name, role: f.role })}>
+        <Field name="name" label="이름" />
+        <Select name="role" label="역할" defaultValue="영업"><Options values={ROLES} /></Select>
+      </ModalForm>
     </>
   );
 }

@@ -1,6 +1,8 @@
 'use client';
 
+import { usePathname } from 'next/navigation';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { audit } from '@/lib/admin';
 import type { ErpState } from '@/lib/flow-core';
 import { companies, loadState, saveState, seed, type CompanyId } from '@/lib/seed';
 
@@ -14,8 +16,8 @@ interface ErpContext {
   company: CompanyId;
   companyInfo: (typeof companies)[CompanyId];
   state: ErpState;
-  /** Runs fn on a copy of the state and commits it only if fn does not throw. */
-  mutate: <T>(fn: (draft: ErpState) => T) => T;
+  /** Runs fn on a copy of the state and commits it only if fn does not throw. `label` goes to the change history. */
+  mutate: <T>(fn: (draft: ErpState) => T, label?: string) => T;
   switchCompany: (company: CompanyId) => void;
   resetState: () => void;
   pending: number;
@@ -49,7 +51,7 @@ export function ErpProvider({ children }: { children: ReactNode }) {
   const commit = useCallback((next: Workspace) => {
     ref.current = next;
     setWorkspace(next);
-    saveState(next.company, next.state);
+    if (!saveState(next.company, next.state)) setToastMessage({ text: '브라우저 저장 공간이 가득 차서 저장하지 못했어요. 첨부 파일을 지우거나 설정에서 백업 후 정리해 주세요.', tone: 'error', key: Date.now() });
   }, []);
 
   // localStorage only exists in the browser, so the workspace loads after hydration.
@@ -58,10 +60,15 @@ export function ErpProvider({ children }: { children: ReactNode }) {
     commit({ company, state: loadState(company) });
   }, [commit]);
 
-  const mutate = useCallback(<T,>(fn: (draft: ErpState) => T): T => {
+  const pathname = usePathname();
+  const pathRef = useRef(pathname);
+  pathRef.current = pathname;
+
+  const mutate = useCallback(<T,>(fn: (draft: ErpState) => T, label?: string): T => {
     const current = ref.current!;
     const draft = structuredClone(current.state);
     const result = fn(draft);
+    audit(draft, pathRef.current, label ?? '데이터 변경');
     commit({ company: current.company, state: draft });
     return result;
   }, [commit]);
@@ -87,7 +94,10 @@ export function ErpProvider({ children }: { children: ReactNode }) {
     const pending =
       state.orders.filter(o => o.status === '승인 대기').length +
       state.leaves.filter(l => l.status === '승인 대기').length +
-      state.adjustments.filter(a => a.status === '승인 대기').length;
+      state.adjustments.filter(a => a.status === '승인 대기').length +
+      state.books.expenses.filter(e => e.status === '승인 대기').length +
+      state.books.vouchers.filter(v => !v.approvedBy && v.origin !== '결산' && !v.reversalOf).length +
+      state.books.contracts.filter(c => c.side !== '근로' && c.sign === '작성' && !c.approvedBy && !c.rejectedAt).length;
     return {
       company, companyInfo: companies[company], state, mutate, switchCompany, resetState, pending,
       toast, toastMessage, form, setForm, drawer, openDrawer, closeDrawer,

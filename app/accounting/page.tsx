@@ -3,11 +3,13 @@
 import { useState } from 'react';
 import { useErp } from '@/components/erp-provider';
 import { Card, CellSub, DataTable, Hint, PageHead, Pill, SearchInput, Stat, Stats, Tabs, Toolbar, cx } from '@/components/ui';
-import { ACCOUNTS, incomeSummary, journal, trialBalance, type AccountType, type Source } from '@/lib/accounting';
+import { ToolbarField, bareSelect } from '@/components/books-ui';
+import { accountLedger, incomeSummary, journal, trialBalance, type AccountType, type Source } from '@/lib/accounting';
+import { accountTypes } from '@/lib/books';
 import { money } from '@/lib/format';
 
-const views = ['손익 요약', '시산표', '전표'] as const;
-const sources: ('전체' | Source)[] = ['전체', '판매', '구매', '수금', '지급', '생산', '재고', '급여', '기초'];
+const views = ['손익 요약', '시산표', '전표', '계정별 원장'] as const;
+const sources: ('전체' | Source)[] = ['전체', '판매', '구매', '매출매입', '수금', '지급', '전표', '경비', '급여', '자산', '세무', '생산', '재고', '결산', '기초'];
 const typeOrder: AccountType[] = ['자산', '부채', '자본', '수익', '비용'];
 
 export default function AccountingPage() {
@@ -15,9 +17,12 @@ export default function AccountingPage() {
   const [view, setView] = useState<(typeof views)[number]>('손익 요약');
   const [source, setSource] = useState<(typeof sources)[number]>('전체');
   const [query, setQuery] = useState('');
+  const [account, setAccount] = useState('보통예금');
 
   const entries = journal(state);
-  const tb = trialBalance(entries);
+  const types = accountTypes(state);
+  const tb = trialBalance(entries, types);
+  const ledger = view === '계정별 원장' ? accountLedger(entries, account, types[account] ?? '비용') : [];
   const pl = incomeSummary(tb);
   const debit = tb.reduce((t, r) => t + r.debit, 0);
   const credit = tb.reduce((t, r) => t + r.credit, 0);
@@ -27,26 +32,33 @@ export default function AccountingPage() {
     ['매출액', pl.revenue],
     ['매출원가', -pl.cogs],
     ['매출총이익', pl.gross, 'total'],
-    ['판매비와관리비 · 급여', -pl.sga],
+    ['판매비와관리비', -pl.sga],
     ['영업이익', pl.operating, 'total'],
-    ['재고 조정 손익', pl.other, 'sub'],
+    ['영업외 손익', pl.other, 'sub'],
     ['당기순이익 (세전)', pl.net, 'total'],
   ];
 
   return (
     <>
-      <PageHead title="회계" sub="판매·구매·입출금·생산·급여 거래에서 전표를 자동으로 만들어요. 따로 입력할 필요가 없고, 거래를 고치면 장부도 바로 바뀝니다." />
+      <PageHead title="회계거래관리" sub="판매·구매·입출금·생산·급여·경비 거래와 직접 입력한 전표가 모두 여기 모여요. 거래를 고치면 장부도 바로 바뀝니다." />
       <Stats>
         <Stat label="매출액" value={money(pl.revenue)} unit="" foot="출고 기준 · 부가세 제외" tone="info" />
         <Stat label="매출총이익" value={money(pl.gross)} unit="" foot={`이익률 ${Math.round(pl.margin * 100)}%`} tone={pl.gross >= 0 ? 'ok' : 'danger'} />
-        <Stat label="영업이익" value={money(pl.operating)} unit="" foot="매출총이익 − 급여" tone={pl.operating >= 0 ? 'ok' : 'danger'} />
-        <Stat label="자동 전표" value={entries.length} unit="건" foot={debit === credit ? '차변 = 대변 일치' : '차대 불일치 확인 필요'} tone={debit === credit ? 'ok' : 'danger'} />
+        <Stat label="영업이익" value={money(pl.operating)} unit="" foot="매출총이익 − 판매비와관리비" tone={pl.operating >= 0 ? 'ok' : 'danger'} />
+        <Stat label="전표" value={entries.length} unit="건" foot={debit === credit ? '차변 = 대변 일치' : '차대 불일치 확인 필요'} tone={debit === credit ? 'ok' : 'danger'} />
       </Stats>
 
       <Card>
         <Toolbar>
           <Tabs options={views} value={view} onChange={setView} />
           {view === '전표' && <SearchInput value={query} onChange={setQuery} placeholder="적요, 계정, 문서 번호 검색" />}
+          {view === '계정별 원장' && (
+            <ToolbarField label="계정">
+              <select value={account} onChange={e => setAccount(e.target.value)} className={bareSelect}>
+                {tb.map(r => <option key={r.account} value={r.account}>{r.account}</option>)}
+              </select>
+            </ToolbarField>
+          )}
         </Toolbar>
 
         {view === '손익 요약' && (
@@ -81,7 +93,7 @@ export default function AccountingPage() {
               foot={false}
               headers={['계정', '분류', '차변 합계', '대변 합계', '잔액']}
               rows={[
-                ...[...tb].sort((a, b) => typeOrder.indexOf(a.type) - typeOrder.indexOf(b.type) || Object.keys(ACCOUNTS).indexOf(a.account) - Object.keys(ACCOUNTS).indexOf(b.account)).map(r => [
+                ...[...tb].sort((a, b) => typeOrder.indexOf(a.type) - typeOrder.indexOf(b.type) || Object.keys(types).indexOf(a.account) - Object.keys(types).indexOf(b.account)).map(r => [
                   <strong key="a" className="font-medium text-ink">{r.account}</strong>,
                   <Pill key="t" tone="neutral">{r.type}</Pill>,
                   money(r.debit),
@@ -117,6 +129,19 @@ export default function AccountingPage() {
                 })}
             />
           </>
+        )}
+        {view === '계정별 원장' && (
+          <DataTable
+            headers={['일자', '구분', '적요', '차변 금액', '대변 금액', '잔액']}
+            rows={ledger.map(r => [
+              r.date,
+              <Pill key="s" tone="neutral">{r.source}</Pill>,
+              <>{r.desc}<CellSub className="font-mono">{r.ref}</CellSub></>,
+              r.debit ? money(r.debit) : '',
+              r.credit ? money(r.credit) : '',
+              <strong key="b" className={cx('font-medium', r.balance < 0 ? 'text-danger' : 'text-ink')}>{money(r.balance)}</strong>,
+            ])}
+          />
         )}
       </Card>
       <Hint className="mt-4">

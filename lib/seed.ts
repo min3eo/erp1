@@ -1,3 +1,6 @@
+import { seedBooks } from './books';
+import { seedHr } from './hr';
+import { seedInv } from './inventory';
 import { seedCollab } from './collab';
 import { normalize, sale, ship, type ErpState, type ErpStateInput } from './flow-core';
 import { confirmPayroll, seedSalaries } from './payroll';
@@ -44,9 +47,12 @@ export function seed(company: CompanyId): ErpState {
     salaries: seedSalaries(),
   };
   const state = normalize(input);
+  seedHr(state);
   confirmPayroll(state, '2026-09', '2026-09-25');
   seedSales(state, other);
   if (!other) seedProduction(state);
+  seedInv(state);
+  seedBooks(state, company);
   return state;
 }
 
@@ -58,19 +64,25 @@ function seedSales(state: ErpState, other: boolean) {
   ship(state, first.id, 20, 'SEED-SHIP-1');
   first.id = 'SO-202608-014';
   first.date = '2026-08-28';
-  state.movements[0].ref = first.id;
+  Object.assign(state.movements[0], { ref: first.id, date: first.date });
   const second = sale(state, { itemCode: b, customer: other ? '모퉁이 상점' : '온누리 드럭', qty: 30, price: other ? 11000 : 26000 });
   ship(state, second.id, 10, 'SEED-SHIP-2');
   second.id = 'SO-202610-003';
   second.date = '2026-10-02';
-  state.movements[0].ref = second.id;
+  Object.assign(state.movements[0], { ref: second.id, date: second.date });
+  // An October order shipped in full, so the month has real sales.
+  const third = sale(state, { itemCode: a, customer: other ? '모퉁이 상점' : '온누리 드럭', qty: 50, price: other ? 9000 : 32000 });
+  ship(state, third.id, 50, 'SEED-SHIP-3');
+  third.id = 'SO-202610-006';
+  third.date = '2026-10-06';
+  Object.assign(state.movements[0], { ref: third.id, date: third.date });
   state.quotes = [
     { id: 'QT-202610-007', customer: other ? '바람 잡화' : '새봄 피부과', itemCode: a, name: state.items.find(i => i[0] === a)![1], qty: 40, price: other ? 8800 : 31000, date: '2026-10-06', validUntil: '2026-10-20', status: '작성' },
     { id: 'QT-202610-004', customer, itemCode: b, name: state.items.find(i => i[0] === b)![1], qty: 50, price: other ? 10500 : 25000, date: '2026-10-02', validUntil: '2026-10-16', status: '작성' },
     { id: 'QT-202609-021', customer: '그린마트', itemCode: a, name: state.items.find(i => i[0] === a)![1], qty: 100, price: other ? 8000 : 29000, date: '2026-09-18', validUntil: '2026-10-02', status: '거절', reason: '단가 조건 불일치' },
   ];
   state.payments = [
-    { id: 'RC-SEED-1', kind: '수금', partner: customer, docId: first.id, amount: 300000, method: '계좌이체', date: '2026-09-30', note: '1차 입금' },
+    { id: 'RC-SEED-1', kind: '수금', partner: customer, docId: first.id, amount: other ? 100000 : 300000, method: '계좌이체', date: '2026-09-30', note: '1차 입금' },
     { id: 'PY-SEED-1', kind: '지급', partner: '그린 파트너스', docId: 'PO-202610-003', amount: 1000000, method: '계좌이체', date: '2026-10-06', note: '선지급' },
   ];
 }
@@ -87,7 +99,12 @@ export function loadState(company: CompanyId): ErpState {
       // Saved before production/payroll existed: start those modules with sample masters.
       parsed.boms ??= company === 'epure' ? seedBoms() : [];
       parsed.salaries ??= seedSalaries();
+      // Saved before the 회계 · 세무 screens existed: start them with sample records.
+      const hadBooks = !!parsed.books, hadHr = !!parsed.hr, hadInv = !!parsed.inv;
       const state = normalize(parsed);
+      if (!hadHr) seedHr(state);
+      if (!hadInv) seedInv(state);
+      if (!hadBooks) seedBooks(state, company);
       state.collab ||= seedCollab(company);
       return state;
     }
@@ -95,10 +112,14 @@ export function loadState(company: CompanyId): ErpState {
   return seed(company);
 }
 
+/** False when the browser refused to store it (storage full or blocked). */
 export function saveState(company: CompanyId, state: ErpState) {
   try {
     localStorage.setItem(storageKey(company), JSON.stringify(state));
-  } catch {}
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** A finished semi-product run, plus one plannable and one short-of-material order. */

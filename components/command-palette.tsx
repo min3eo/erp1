@@ -57,7 +57,28 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
     const quotes: Result[] = state.quotes.filter(x => hit(x.id, x.customer, x.name)).map(x => ({
       key: 'q' + x.id, group: '견적', label: x.id + ' · ' + x.name, sub: x.customer, status: x.status, page: 'quotes', run: go(href('quotes')),
     }));
-    return [...pages, ...projects, ...tasks, ...orders, ...sales, ...quotes, ...items].slice(0, 30);
+    const partners: Result[] = state.books.partners.filter(p => hit(p.name, p.bizNo, p.contact)).map(p => ({
+      key: 'pt' + p.name, group: '거래처', label: p.name, sub: [p.kind, p.bizNo, p.contact].filter(Boolean).join(' · '), page: 'acctSetup', run: go(href('acctSetup')),
+    }));
+    const invoices: Result[] = state.books.invoices.filter(i => hit(i.id, i.partner, i.desc, i.ref)).map(i => ({
+      key: 'ti' + i.id, group: '세금계산서', label: `${i.partner} · ${i.desc}`, sub: `${i.kind} · ${i.date} · ₩${(i.supply + i.vat).toLocaleString()}`, status: i.status, page: 'taxInvoices', run: go('/print/taxinvoice/' + i.id),
+    }));
+    const contracts: Result[] = state.books.contracts.filter(c => hit(c.title, c.partner, c.id)).map(c => ({
+      key: 'ct' + c.id, group: '계약', label: c.title, sub: `${c.partner} · ${c.start} ~ ${c.end || ''}`, status: c.sign, page: c.side === '근로' ? 'laborContracts' : 'contracts', run: go(href(c.side === '근로' ? 'laborContracts' : 'contracts')),
+    }));
+    const vouchers: Result[] = state.books.vouchers.filter(v => hit(v.desc, v.partner, v.project ?? '', ...v.lines.map(l => l.account))).map(v => ({
+      key: 'jv' + v.id, group: '전표', label: v.desc, sub: `${v.date} · ${v.kind} · ₩${v.lines.reduce((t, l) => t + l.debit, 0).toLocaleString()}`, status: v.approvedBy ? '승인' : '미승인', page: 'vouchers', run: go(href('vouchers')),
+    }));
+    const people: Result[] = state.employees.filter(e => hit(e.name, e.dept, e.role)).map(e => ({
+      key: 'em' + e.name, group: '직원', label: e.name, sub: `${e.dept} · ${e.role}`, status: e.left ? '퇴사' : undefined, page: 'people', run: () => { onClose(); openDetail('employee', e.name); },
+    }));
+    const fx: Result[] = state.books.fxDeals.filter(d => hit(d.partner, d.desc, d.currency)).map(d => ({
+      key: 'fx' + d.id, group: '수출입', label: `${d.partner} · ${d.desc}`, sub: `${d.kind} · ${d.amount.toLocaleString()} ${d.currency}`, page: 'forex', run: go(href('forex')),
+    }));
+    const loans: Result[] = state.books.loans.filter(l => hit(l.lender, l.desc)).map(l => ({
+      key: 'ln' + l.id, group: '차입금', label: `${l.lender} ${l.desc}`, sub: `₩${l.principal.toLocaleString()} · 연 ${l.rate}%`, page: 'loans', run: go(href('loans')),
+    }));
+    return [...pages, ...partners, ...people, ...items, ...orders, ...sales, ...quotes, ...invoices, ...contracts, ...vouchers, ...fx, ...loans, ...projects, ...tasks].slice(0, 40);
   }, [query, state, router, onClose, openDetail]);
 
   const choose = (r?: Result) => r?.run();

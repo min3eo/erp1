@@ -1,8 +1,12 @@
 'use client';
 
+import { companyProfile } from '@/lib/operations-report';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useErp } from '@/components/erp-provider';
+import { ContractDoc, LaborDoc } from '@/components/contract-doc';
+import { ReportDoc } from '@/components/report-doc';
+import { bizNoOf } from '@/lib/books';
 import { Button } from '@/components/ui';
 import { unit } from '@/lib/flow-core';
 import { PAYMENT_TERMS_DAYS, withVat, wonInKorean } from '@/lib/finance';
@@ -17,6 +21,7 @@ const MIN_ROWS = 8;
 export default function PrintPage() {
   const { kind, id } = useParams<{ kind: string; id: string }>();
   const { state, companyInfo } = useErp();
+  const me = companyProfile(state, companyInfo);
   const router = useRouter();
   // Payslip month comes from ?m=YYYY-MM; read after mount so the page needs no Suspense boundary.
   const [month, setMonth] = useState('2026-10');
@@ -55,7 +60,22 @@ export default function PrintPage() {
       lines: [{ name: o.name, code: o.itemCode, qty: o.qty, unit: itemUnit(o.itemCode), price: o.price }],
       notes: ['납품 장소: 본사 창고', `결제 조건: 입고일로부터 ${PAYMENT_TERMS_DAYS}일`, `진행 상태: ${o.status}`],
     };
+
+  } else if (kind === 'taxinvoice') {
+    const inv = state.books.invoices.find(x => x.id === docId);
+    if (inv) doc = {
+      title: inv.kind === '매출' ? '전 자 세 금 계 산 서' : '세 금 계 산 서 (매입)', no: inv.id, date: inv.date, partner: inv.partner,
+      partnerRole: inv.kind === '매출' ? '공급받는자' : '공급자', greeting: inv.kind === '매출' ? '위 금액을 청구합니다.' : '위 금액을 공급받았습니다.',
+      lines: [{ name: inv.desc, code: inv.ref, qty: 1, unit: '식', price: inv.supply }],
+      notes: [`상태: ${inv.status}`, `공급받는자 사업자등록번호: ${inv.kind === '매출' ? bizNoOf(state, inv.partner) || '미등록' : '123-45-67890'}`],
+    };
   }
+
+  if (kind === 'report') return <ReportDoc kind={docId} onBack={() => router.back()} />;
+  const labor = kind === 'labor' && state.books.contracts.find(c => c.id === docId && c.side === '근로');
+  if (labor) return <LaborDoc c={labor} company={companyInfo.name} onBack={() => router.back()} />;
+  const contract = kind === 'contract' && state.books.contracts.find(c => c.id === docId && c.side !== '근로');
+  if (contract) return <ContractDoc c={contract} company={companyInfo.name} onBack={() => router.back()} />;
 
   if (kind === 'payslip') {
     const salary = state.salaries.find(s => s.name === docId);
@@ -100,11 +120,11 @@ export default function PrintPage() {
           <table className="w-full border-collapse text-[11px]">
             <tbody>
               {[
-                ['등록번호', '123-45-67890'],
-                ['상호', companyInfo.name],
-                ['대표자', '민서'],
-                ['주소', '서울특별시 성동구 성수이로 00 (샘플)'],
-                ['업태 · 종목', companyInfo.business],
+                ['등록번호', me.bizNo],
+                ['상호', me.name],
+                ['대표자', me.ceo],
+                ['주소', me.address],
+                ['업태 · 종목', [me.bizType, me.bizItem].filter(Boolean).join(' · ')],
               ].map(([k, v], i) => (
                 <tr key={k}>
                   {i === 0 && <th rowSpan={5} className="w-6 border border-[#999] bg-[#f3f3f3] px-1 font-normal [writing-mode:vertical-rl]">공급자</th>}
@@ -113,7 +133,7 @@ export default function PrintPage() {
                     {v}
                     {k === '대표자' && (
                       <span aria-label="직인" className="absolute top-1/2 right-3 grid size-11 -translate-y-1/2 rotate-[-8deg] place-items-center rounded-full border-2 border-[#d33] text-[9px] leading-tight font-semibold text-[#d33] opacity-80">
-                        {companyInfo.name}<br />인
+                        {me.name}<br />인
                       </span>
                     )}
                   </td>
