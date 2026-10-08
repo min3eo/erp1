@@ -1,0 +1,140 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+
+@theme {
+  --font-sans: 'Pretendard Variable', Pretendard, -apple-system, 'Segoe UI', 'Malgun Gothic', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Consolas, monospace;
+
+  /* Mobile-first breakpoints. */
+  --breakpoint-*: initial;
+  --breakpoint-sm: 621px;
+  --breakpoint-md: 1001px;
+  --breakpoint-lg: 1151px;
+  --breakpoint-xl: 1500px;
+
+  --text-micro: 10px;
+  --text-tiny: 11px;
+  --text-caption: 12px;
+  --text-xs: 12.5px;
+  --text-body: 13.5px;
+  --text-base: 14px;
+  --text-title: 16px;
+
+  /* Light palette (warm paper grey + one cyan accent). Dark values are redefined below. */
+  --color-canvas: #f6f6f4;
+  --color-surface: #ffffff;
+  --color-surface-2: #f1f1ee;
+  --color-ink: #141414;
+  --color-ink-2: #3b3b3a;
+  --color-muted: #727270;
+  --color-subtle: #a4a4a1;
+  --color-line: #e6e5e2;
+  --color-line-strong: #d3d2ce;
+
+  --color-accent: #0780bf;
+  --color-accent-hover: #066a9e;
+  --color-accent-soft: #e3f2fa;
+  --color-accent-line: #b5dbef;
+  --color-on-accent: #ffffff;
+
+  --color-info: #2560c8;
+  --color-info-soft: #e8eefa;
+  --color-ok: #17784a;
+  --color-ok-soft: #e3f3ea;
+  --color-warn: #a35a00;
+  --color-warn-soft: #fcefd9;
+  --color-danger: #c2352b;
+  --color-danger-soft: #fbe7e4;
+  --color-neutral: #727270;
+  --color-neutral-soft: #efefec;
+  --color-night: #141414;
+
+  /* Module swatches (the two-tone toggle icons). */
+  --color-sw-cyan: #18b4e8;
+  --color-sw-green: #12a066;
+  --color-sw-magenta: #f13fd0;
+  --color-sw-orange: #ff7a1c;
+  --color-sw-pink: #de0f8f;
+  --color-sw-forest: #11744a;
+  --color-sw-mint: #3cdbb2;
+  --color-sw-blue: #1d6fe3;
+
+  --radius-card: 8px;
+  --shadow-card: 0 1px 0 rgb(20 20 20 / 0.02);
+  --shadow-pop: 0 16px 48px rgb(20 20 20 / 0.16), 0 2px 6px rgb(20 20 20 / 0.06);
+
+  --animate-page: page-in 0.22s ease-out;
+  --animate-pop: pop-in 0.16s ease-out;
+  --animate-drawer: drawer-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+  --animate-shimmer: shimmer 1.4s ease-in-out infinite;
+  @keyframes page-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  @keyframes pop-in { from { opacity: 0; transform: translateY(6px) scale(0.98); } to { opacity: 1; transform: none; } }
+  @keyframes drawer-in { from { opacity: 0.6; transform: translateX(24px); } to { opacity: 1; transform: none; } }
+  @keyframes shimmer { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+  --animate-drift: drift 9s ease-in-out infinite alternate;
+  --animate-drift-slow: drift 13s ease-in-out infinite alternate-reverse;
+  --animate-sheen: sheen 7s ease-in-out infinite;
+  @keyframes drift { from { transform: translate(0, 0) scale(1); } to { transform: translate(-40px, 14px) scale(1.12); } }
+  @keyframes sheen { 0%, 62% { transform: translateX(0); } 100% { transform: translateX(420%); } }
+  --animate-toast: toast 2.6s ease forwards;
+  @keyframes toast {
+    0% { opacity: 0; transform: translate(-50%, 6px); }
+    8%, 90% { opacity: 1; transform: translate(-50%, 0); }
+    100% { opacity: 0; transform: translate(-50%, 0); }
+  }
+}
+
+@layer base {
+  [data-theme='dark'] {
+    color-scheme: dark;
+    --color-canvas: #111211;
+    --color-surface: #18191a;
+    --color-surface-2: #202122;
+    --color-ink: #ededeb;
+    --color-ink-2: #cdcdcb;
+    --color-muted: #9a9a97;
+    --color-subtle: #6c6c6a;
+    --color-line: #29292a;
+    --color-line-strong: #3a3a3b;
+    --color-accent: #3fb7ec;
+    --color-accent-hover: #6cc8f1;
+    --color-accent-soft: #0f2a39;
+    --color-accent-line: #1d4b63;
+    --color-on-accent: #071a24;
+    --color-info: #7ea6ef;
+    --color-info-soft: #1a2540;
+    --color-ok: #5cc994;
+    --color-ok-soft: #14301f;
+    --color-warn: #f0b24f;
+    --color-warn-soft: #3a2a0e;
+    --color-danger: #f07b70;
+    --color-danger-soft: #3d1a17;
+    --color-neutral: #9a9a97;
+    --color-neutral-soft: #242525;
+    --color-night: #ededeb;
+    --shadow-pop: 0 16px 48px rgb(0 0 0 / 0.5), 0 2px 6px rgb(0 0 0 / 0.3);
+  }
+  body {
+    @apply bg-canvas text-base/[1.55] text-ink antialiased;
+    font-feature-settings: 'tnum' 1;
+  }
+  button:not(:disabled), a, select, summary {
+    cursor: pointer;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+  @media print {
+    @page { size: A4; margin: 12mm; }
+    body { background: #fff !important; }
+  }
+  dialog::backdrop {
+    background: rgb(10 10 10 / 0.36);
+    backdrop-filter: blur(2px);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  }
+}
